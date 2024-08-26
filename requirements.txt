@@ -1,5 +1,5 @@
 #pandas
-gunicorn
+#gunicorn
 # langchain
 # langchain_community
 # chromadb
