@@ -1,10 +1,10 @@
-pandas
+#pandas
 gunicorn
-langchain
-langchain_community
-chromadb
-sentence_transformers
-mysql-connector-python
-groq
+# langchain
+# langchain_community
+# chromadb
+# sentence_transformers
+# mysql-connector-python
+# groq
 Flask
 flask[async]
