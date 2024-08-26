@@ -188,19 +188,77 @@
 #     app.run(host='0.0.0.0', port=8000)
 
 from flask import Flask, request, jsonify
+import logging
+import requests
+from requests.exceptions import RequestException
+from werkzeug.exceptions import BadGateway
 
 app = Flask(__name__)
 
-# GET request to return a simple "Hello, World!" message
+# Configure logging
+logging.basicConfig(filename='app.log', level=logging.INFO,
+                    format='%(asctime)s %(levelname)s: %(message)s [in %(pathname)s:%(lineno)d]')
+
 @app.route('/hello', methods=['GET'])
 def hello_world():
+    app.logger.info('Successful GET request to /hello')
     return "Hello, World!"
 
-# POST request that echoes the received data
 @app.route('/echo', methods=['POST'])
 def echo():
-    data = request.json
-    return jsonify({"received": data})
+    try:
+        data = request.json
+        app.logger.info(f'Successful POST request to /echo with data: {data}')
+        return jsonify({"received": data})
+    except Exception as e:
+        error_msg = f"Error in /echo: {str(e)}"
+        app.logger.error(error_msg, exc_info=True)
+        return jsonify({"error": "Internal Server Error", "details": error_msg}), 500
+
+@app.route('/test-request/<path:url>', methods=['GET'])
+def test_request(url):
+    try:
+        response = requests.get(url, timeout=5)
+        response.raise_for_status()
+        return jsonify({"status": "success", "status_code": response.status_code})
+    except requests.Timeout:
+        error_msg = f"Timeout error when requesting {url}. The upstream server took too long to respond (> 5 seconds)."
+        app.logger.error(error_msg, exc_info=True)
+        raise BadGateway(description=error_msg)
+    except requests.ConnectionError:
+        error_msg = f"Connection error when requesting {url}. Could not establish a connection to the upstream server. The server might be down or unreachable."
+        app.logger.error(error_msg, exc_info=True)
+        raise BadGateway(description=error_msg)
+    except requests.HTTPError as e:
+        error_msg = f"HTTP error when requesting {url}: Received status code {e.response.status_code} from upstream server."
+        app.logger.error(error_msg, exc_info=True)
+        return jsonify({"error": error_msg, "upstream_status_code": e.response.status_code}), e.response.status_code
+    except RequestException as e:
+        error_msg = f"Request error when requesting {url}: {str(e)}. This could be due to network issues or problems with the upstream server."
+        app.logger.error(error_msg, exc_info=True)
+        raise BadGateway(description=error_msg)
+
+@app.errorhandler(BadGateway)
+def handle_bad_gateway(e):
+    response = jsonify({
+        "error": "Bad Gateway",
+        "message": str(e.description),
+        "code": 502,
+        "details": "This error typically occurs when the server, while acting as a gateway or proxy, received an invalid response from the upstream server it accessed in attempting to fulfill the request."
+    })
+    response.status_code = 502
+    app.logger.error(f'502 Bad Gateway: {e.description}')
+    return response
+
+@app.errorhandler(Exception)
+def handle_exception(e):
+    error_msg = f'Unhandled exception: {str(e)}'
+    app.logger.error(error_msg, exc_info=True)
+    return jsonify({
+        "error": "Internal Server Error",
+        "message": error_msg,
+        "details": "An unexpected error occurred on the server. Please check the server logs for more information."
+    }), 500
 
 if __name__ == "__main__":
     app.run(host='0.0.0.0', port=8000)
