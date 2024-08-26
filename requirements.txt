@@ -1,4 +1,5 @@
 pandas
+gunicorn
 langchain
 langchain_community
 chromadb
