@@ -6,5 +6,6 @@
 # sentence_transformers
 # mysql-connector-python
 # groq
+requests
 Flask
 flask[async]
