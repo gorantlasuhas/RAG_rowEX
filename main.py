@@ -1,7 +1,8 @@
 import os
+import logging
 import pandas as pd
 from flask import Flask, request, jsonify
-from langchain.vectorstores import Chroma
+from langchain_community.vectorstores import Chroma
 from langchain_community.document_loaders.csv_loader import CSVLoader
 from langchain_community.embeddings import SentenceTransformerEmbeddings
 from sentence_transformers import SentenceTransformer
@@ -10,6 +11,10 @@ from groq import Groq
 import mysql.connector
 
 app = Flask(__name__)
+
+# Set up logging
+logging.basicConfig(level=logging.INFO)  # You can change this to DEBUG for more detailed logs
+logger = logging.getLogger(__name__)
 
 # Load your Groq API key
 GROQ_API_KEY = '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'
@@ -21,7 +26,8 @@ model = SentenceTransformer('all-MiniLM-L6-v2')
 csv_file_path = "kpis.csv"  # Path to your CSV file
 csv_loader = CSVLoader(file_path=csv_file_path)
 documents = csv_loader.load()
-print(f"Number of documents loaded from CSV: {len(documents)}")
+logger.info(f"Number of documents loaded from CSV: {len(documents)}")
+
 text_splitter = RecursiveCharacterTextSplitter(chunk_size=200, chunk_overlap=20)
 split_documents = text_splitter.split_documents(documents)
 
@@ -43,7 +49,8 @@ else:
         persist_directory="embeddings"
     )
     vectorstore.persist()
-print(f"Number of documents in vectorstore: {vectorstore._collection.count()}")
+logger.info(f"Number of documents in vectorstore: {vectorstore._collection.count()}")
+
 # SQL Database connection details
 db_config = {
     'user': 'root',
@@ -55,7 +62,7 @@ db_config = {
 
 # Function to execute the SQL query and retrieve the row from the SQL database
 def execute_sql_query(query):
-    query = query.strip() 
+    query = query.strip()
     connection = mysql.connector.connect(**db_config)
     try:
         cursor = connection.cursor(dictionary=True)
@@ -68,7 +75,7 @@ def execute_sql_query(query):
         return result
 
     except mysql.connector.Error as err:
-        print(f"Error: {err}")
+        logger.error(f"SQL Error: {err}")
         return None
 
     finally:
@@ -77,9 +84,9 @@ def execute_sql_query(query):
             connection.close()
 
 async def rag(query: str, contexts: list) -> str:
-    print("> RAG Called")
+    logger.info("RAG process started")
     context_str = "\n".join(contexts)
-    print(context_str)
+    logger.debug(context_str)
     
     # Create the prompt for the language model
     prompt = f"""
@@ -123,44 +130,59 @@ async def rag(query: str, contexts: list) -> str:
     """
 
     # Generate answer using Groq
-    llm = client.chat.completions.create(
-        messages=[
-            {"role": "system", "content": "You are a highly skilled data retrieval system designed to extract specific information from a dataset stored in an SQL database. you are the only system which give SQL query as answer"},
-            {"role": "user", "content": prompt}
-        ],
-        model="llama3-70b-8192",
-        temperature=1,
-        max_tokens= 200
-    )
-    response = llm.choices[0].message.content.strip()
-    print(response)
-    return response
+    try:
+        llm = client.chat.completions.create(
+            messages=[
+                {"role": "system", "content": "You are a highly skilled data retrieval system..."},
+                {"role": "user", "content": prompt}
+            ],
+            model="llama3-70b-8192",
+            temperature=1,
+            max_tokens=200
+        )
+        response = llm.choices[0].message.content.strip()
+        logger.info("RAG process completed successfully")
+        return response
+    except Exception as e:
+        logger.error(f"Error during RAG process: {e}")
+        return ""
 
 async def retrieve(query: str) -> list:
-    print("hi")
-    # Create query embedding
-    print(query)
-    print(f"Number of documents in vectorstore: {vectorstore._collection.count()}")
-    # Perform similarity search in the vector store
-    results = vectorstore.similarity_search(query, k=10)
-    print(results)
-    # Extract the combined descriptions from the results
-    contexts = [result.page_content for result in results]
-    return contexts
+    logger.info(f"Retrieving documents for query: {query}")
+    
+    try:
+        # Create query embedding
+        logger.debug(f"Number of documents in vectorstore: {vectorstore._collection.count()}")
+        
+        # Perform similarity search in the vector store
+        results = vectorstore.similarity_search(query, k=10)
+        logger.info(f"Found {len(results)} matching documents")
+        
+        # Extract the combined descriptions from the results
+        contexts = [result.page_content for result in results]
+        return contexts
+    except Exception as e:
+        logger.error(f"Error during document retrieval: {e}")
+        return []
 
 @app.route('/smsbot', methods=['POST'])
 async def send_sms():
     received_message = request.json.get('payload', '')
-    print("The received message is", received_message)
+    logger.info(f"Received message: {received_message}")
 
-    # Execute the RAG process
-    contexts = await retrieve(received_message)
-    sql_query = await rag(received_message, contexts)
-    
-    # Execute the SQL query and fetch the result
-    result = execute_sql_query(sql_query)
-    
-    return jsonify({"message": result})
+    try:
+        # Execute the RAG process
+        contexts = await retrieve(received_message)
+        sql_query = await rag(received_message, contexts)
+        
+        # Execute the SQL query and fetch the result
+        result = execute_sql_query(sql_query)
+        
+        return jsonify({"message": result})
+    except Exception as e:
+        logger.error(f"Error in SMS bot process: {e}")
+        return jsonify({"error": "An error occurred"}), 500
 
 if __name__ == "__main__":
-    app.run(host='0.0.0.0',  port=8000)
+    logger.info("Starting the Flask application")
+    app.run(host='0.0.0.0', port=8000)
