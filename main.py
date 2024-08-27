@@ -187,78 +187,124 @@
 #     logger.info("Starting the Flask application")
 #     app.run(host='0.0.0.0', port=8000)
 
+# from flask import Flask, request, jsonify
+# import logging
+# import requests
+# from requests.exceptions import RequestException
+# from werkzeug.exceptions import BadGateway
+
+# app = Flask(__name__)
+
+# # Configure logging
+# logging.basicConfig(filename='app.log', level=logging.INFO,
+#                     format='%(asctime)s %(levelname)s: %(message)s [in %(pathname)s:%(lineno)d]')
+
+# @app.route('/hello', methods=['GET'])
+# def hello_world():
+#     app.logger.info('Successful GET request to /hello')
+#     return "Hello, World!"
+
+# @app.route('/echo', methods=['POST'])
+# def echo():
+#     try:
+#         data = request.json
+#         app.logger.info(f'Successful POST request to /echo with data: {data}')
+#         return jsonify({"received": data})
+#     except Exception as e:
+#         error_msg = f"Error in /echo: {str(e)}"
+#         app.logger.error(error_msg, exc_info=True)
+#         return jsonify({"error": "Internal Server Error", "details": error_msg}), 500
+
+# @app.route('/test-request/<path:url>', methods=['GET'])
+# def test_request(url):
+#     try:
+#         response = requests.get(url, timeout=5)
+#         response.raise_for_status()
+#         return jsonify({"status": "success", "status_code": response.status_code})
+#     except requests.Timeout:
+#         error_msg = f"Timeout error when requesting {url}. The upstream server took too long to respond (> 5 seconds)."
+#         app.logger.error(error_msg, exc_info=True)
+#         raise BadGateway(description=error_msg)
+#     except requests.ConnectionError:
+#         error_msg = f"Connection error when requesting {url}. Could not establish a connection to the upstream server. The server might be down or unreachable."
+#         app.logger.error(error_msg, exc_info=True)
+#         raise BadGateway(description=error_msg)
+#     except requests.HTTPError as e:
+#         error_msg = f"HTTP error when requesting {url}: Received status code {e.response.status_code} from upstream server."
+#         app.logger.error(error_msg, exc_info=True)
+#         return jsonify({"error": error_msg, "upstream_status_code": e.response.status_code}), e.response.status_code
+#     except RequestException as e:
+#         error_msg = f"Request error when requesting {url}: {str(e)}. This could be due to network issues or problems with the upstream server."
+#         app.logger.error(error_msg, exc_info=True)
+#         raise BadGateway(description=error_msg)
+
+# @app.errorhandler(BadGateway)
+# def handle_bad_gateway(e):
+#     response = jsonify({
+#         "error": "Bad Gateway",
+#         "message": str(e.description),
+#         "code": 502,
+#         "details": "This error typically occurs when the server, while acting as a gateway or proxy, received an invalid response from the upstream server it accessed in attempting to fulfill the request."
+#     })
+#     response.status_code = 502
+#     app.logger.error(f'502 Bad Gateway: {e.description}')
+#     return response
+
+# @app.errorhandler(Exception)
+# def handle_exception(e):
+#     error_msg = f'Unhandled exception: {str(e)}'
+#     app.logger.error(error_msg, exc_info=True)
+#     return jsonify({
+#         "error": "Internal Server Error",
+#         "message": error_msg,
+#         "details": "An unexpected error occurred on the server. Please check the server logs for more information."
+#     }), 500
+
+# if __name__ == "__main__":
+#     app.run(host='0.0.0.0', port=8000)
+
+import os
+import mysql.connector
 from flask import Flask, request, jsonify
-import logging
-import requests
-from requests.exceptions import RequestException
-from werkzeug.exceptions import BadGateway
 
 app = Flask(__name__)
 
-# Configure logging
-logging.basicConfig(filename='app.log', level=logging.INFO,
-                    format='%(asctime)s %(levelname)s: %(message)s [in %(pathname)s:%(lineno)d]')
+# Fetch MySQL connection details from environment variables
+db_config = {
+    'user': os.getenv('MYSQLUSER'),
+    'password': os.getenv('MYSQLPASSWORD'),
+    'host': os.getenv('MYSQLHOST'),
+    'port': os.getenv('MYSQLPORT', 3306),  # Default MySQL port is 3306
+    'database': os.getenv('MYSQLDATABASE'),
+}
 
-@app.route('/hello', methods=['GET'])
-def hello_world():
-    app.logger.info('Successful GET request to /hello')
-    return "Hello, World!"
-
-@app.route('/echo', methods=['POST'])
-def echo():
+# Function to execute the SQL query and retrieve the row from the SQL database
+def execute_sql_query(query):
+    connection = mysql.connector.connect(**db_config)
     try:
-        data = request.json
-        app.logger.info(f'Successful POST request to /echo with data: {data}')
-        return jsonify({"received": data})
-    except Exception as e:
-        error_msg = f"Error in /echo: {str(e)}"
-        app.logger.error(error_msg, exc_info=True)
-        return jsonify({"error": "Internal Server Error", "details": error_msg}), 500
+        cursor = connection.cursor(dictionary=True)
+        cursor.execute(query)
+        result = cursor.fetchall()
+        return result
 
-@app.route('/test-request/<path:url>', methods=['GET'])
-def test_request(url):
-    try:
-        response = requests.get(url, timeout=5)
-        response.raise_for_status()
-        return jsonify({"status": "success", "status_code": response.status_code})
-    except requests.Timeout:
-        error_msg = f"Timeout error when requesting {url}. The upstream server took too long to respond (> 5 seconds)."
-        app.logger.error(error_msg, exc_info=True)
-        raise BadGateway(description=error_msg)
-    except requests.ConnectionError:
-        error_msg = f"Connection error when requesting {url}. Could not establish a connection to the upstream server. The server might be down or unreachable."
-        app.logger.error(error_msg, exc_info=True)
-        raise BadGateway(description=error_msg)
-    except requests.HTTPError as e:
-        error_msg = f"HTTP error when requesting {url}: Received status code {e.response.status_code} from upstream server."
-        app.logger.error(error_msg, exc_info=True)
-        return jsonify({"error": error_msg, "upstream_status_code": e.response.status_code}), e.response.status_code
-    except RequestException as e:
-        error_msg = f"Request error when requesting {url}: {str(e)}. This could be due to network issues or problems with the upstream server."
-        app.logger.error(error_msg, exc_info=True)
-        raise BadGateway(description=error_msg)
+    except mysql.connector.Error as err:
+        print(f"Error: {err}")
+        return None
 
-@app.errorhandler(BadGateway)
-def handle_bad_gateway(e):
-    response = jsonify({
-        "error": "Bad Gateway",
-        "message": str(e.description),
-        "code": 502,
-        "details": "This error typically occurs when the server, while acting as a gateway or proxy, received an invalid response from the upstream server it accessed in attempting to fulfill the request."
-    })
-    response.status_code = 502
-    app.logger.error(f'502 Bad Gateway: {e.description}')
-    return response
+    finally:
+        if connection.is_connected():
+            cursor.close()
+            connection.close()
 
-@app.errorhandler(Exception)
-def handle_exception(e):
-    error_msg = f'Unhandled exception: {str(e)}'
-    app.logger.error(error_msg, exc_info=True)
-    return jsonify({
-        "error": "Internal Server Error",
-        "message": error_msg,
-        "details": "An unexpected error occurred on the server. Please check the server logs for more information."
-    }), 500
+# A simple route to test the connection
+@app.route('/testdb', methods=['GET'])
+def test_db():
+    query = "SELECT * FROM kpi WHERE kpi = 'Instant_og_call_count'"  # Simple query to test the connection
+    result = execute_sql_query(query)
+    if result:
+        return jsonify({"status": "Database connected!", "result": result})
+    else:
+        return jsonify({"status": "Failed to connect to the database."}), 500
 
 if __name__ == "__main__":
     app.run(host='0.0.0.0', port=8000)
