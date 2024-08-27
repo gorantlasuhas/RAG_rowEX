@@ -271,11 +271,11 @@ app = Flask(__name__)
 
 # Fetch MySQL connection details from environment variables
 db_config = {
-    'user': os.getenv('MYSQLUSER'),
-    'password': os.getenv('MYSQLPASSWORD'),
-    'host': os.getenv('MYSQLHOST'),
-    'port': os.getenv('MYSQLPORT', 3306),  # Default MySQL port is 3306
-    'database': os.getenv('MYSQLDATABASE'),
+    'user': 'root',
+    'password': 'BRgHrHbOHKFqvwnbAhWhSzndgexyyHnk',
+    'host': 'mysql.railway.internal',
+    'port': 3306,  # Default MySQL port is 3306
+    'database': 'railway',
 }
 
 # Function to execute the SQL query and retrieve the row from the SQL database
